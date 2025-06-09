@@ -184,6 +184,26 @@ func GetLatestSessionSaveDataSlot(uuid []byte) (int, error) {
 	return slot, nil
 }
 
+func ListSessionSaveDataSlots(uuid []byte) ([]defs.SessionSlotInfo, error) {
+	rows, err := handle.Query("SELECT slot, UNIX_TIMESTAMP(timestamp) FROM sessionSaveData WHERE uuid = ? ORDER BY timestamp DESC", uuid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var slots []defs.SessionSlotInfo
+	for rows.Next() {
+		var info defs.SessionSlotInfo
+		err := rows.Scan(&info.Slot, &info.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		slots = append(slots, info)
+	}
+
+	return slots, nil
+}
+
 func StoreSessionSaveData(uuid []byte, data defs.SessionSaveData, slot int) error {
 	var buf bytes.Buffer
 	err := gob.NewEncoder(&buf).Encode(data)

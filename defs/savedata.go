@@ -177,3 +177,8 @@ type SessionHistoryData struct {
 }
 
 type SessionHistoryResult int
+
+type SessionSlotInfo struct {
+	Slot      int `json:"slot"`
+	Timestamp int `json:"timestamp"`
+}

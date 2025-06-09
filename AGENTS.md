@@ -30,6 +30,63 @@ Game state relevant to training a neural network is mostly represented by `defs.
 
 These endpoints require an `Authorization` header containing the base64 token from `/account/login`.
 
+## Using the Training API
+
+Several unauthenticated endpoints expose save data for neural network clients.
+
+### `GET /training/data`
+Returns a combined object containing the latest session save and the system
+save for a player.
+
+- Provide a `username` query parameter to fetch data for a specific account.
+  If this parameter is present no `Authorization` header is required.
+- Alternatively include an `Authorization` header to fetch data for the
+  authenticated user.
+
+Example request:
+
+```bash
+curl "http://<host>/training/data?username=Ash"
+```
+
+Example response:
+
+```json
+{
+  "system": { "trainerId": 1, "timestamp": 1234567890 },
+  "session": { "seed": "abc", "timestamp": 1234567890 }
+}
+```
+
+### `GET /training/sessions`
+Lists all session save slots with their timestamps. Use the same authentication
+rules as `/training/data`.
+
+Example response:
+
+```json
+[
+  { "slot": 0, "timestamp": 1234567890 },
+  { "slot": 1, "timestamp": 1234500000 }
+]
+```
+
+### `POST /training/actions`
+Queues an action that the game should execute. The request body must match the
+`TrainingAction` structure:
+
+```json
+{
+  "name": "UseItem",
+  "args": { "itemId": 1 }
+}
+```
+
+### `GET /training/actions`
+Retrieves and clears the queued actions for the user. The response is an array
+of `TrainingAction` objects. Authentication works the same way as the other
+training endpoints.
+
 ## Style and Testing
 - Format all Go code with `gofmt -w` before committing.
 - After modifications run `go test ./...`. Dependencies may fail to download in this environment; report the failure if it occurs.
