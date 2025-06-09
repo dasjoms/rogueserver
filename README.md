@@ -80,4 +80,21 @@ Make sure that both 8000 and 8001 are portforwarded on your router.
 
 Test that the server's game and game authentication works from other machines both in and outside of the network. Once this is complete, enjoy!
 
+## Training Data Endpoint
+The server exposes `GET /training/data` which returns the latest session and system saves for an account.
+Provide a `username` query parameter to specify which account to fetch. Authentication tokens are optional for this endpoint.
 
+`GET /training/sessions` returns a list of session slots with timestamps for an account using the same `username` query parameter.
+
+`POST /training/actions` queues an action for execution. Use a JSON body describing the action. `GET /training/actions` retrieves and clears the queued actions.
+
+
+
+## Test Receiver
+A simple Go program in `cmd/receiver` exercises the training endpoints. Build and run it with:
+
+```bash
+go run ./cmd/receiver -username <your_account>
+```
+
+Use `-host` to specify the server address if it is not `http://localhost:8080`.

@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pagefaultgames/rogueserver/api/account"
@@ -34,6 +35,11 @@ import (
 	"github.com/pagefaultgames/rogueserver/api/savedata"
 	"github.com/pagefaultgames/rogueserver/db"
 	"github.com/pagefaultgames/rogueserver/defs"
+)
+
+var (
+	actionMu    sync.Mutex
+	actionQueue = make(map[string][]defs.TrainingAction)
 )
 
 /*
@@ -287,6 +293,11 @@ type CombinedSaveData struct {
 	ClientSessionId string               `json:"clientSessionId"`
 }
 
+type TrainingData struct {
+	System  defs.SystemSaveData  `json:"system"`
+	Session defs.SessionSaveData `json:"session"`
+}
+
 // TODO wrap this in a transaction
 func handleUpdateAll(w http.ResponseWriter, r *http.Request) {
 	uuid, err := uuidFromRequest(r)
@@ -500,6 +511,150 @@ func handleSystem(w http.ResponseWriter, r *http.Request) {
 		httpError(w, r, fmt.Errorf("unknown action"), http.StatusBadRequest)
 		return
 	}
+}
+
+func handleTrainingData(w http.ResponseWriter, r *http.Request) {
+	var uuid []byte
+	var err error
+
+	if username := r.URL.Query().Get("username"); username != "" {
+		uuid, err = db.FetchUUIDFromUsername(username)
+		if err != nil {
+			httpError(w, r, fmt.Errorf("failed to resolve username: %s", err), http.StatusBadRequest)
+			return
+		}
+	} else if r.Header.Get("Authorization") != "" {
+		uuid, err = uuidFromRequest(r)
+		if err != nil {
+			httpError(w, r, err, http.StatusUnauthorized)
+			return
+		}
+	} else {
+		httpError(w, r, fmt.Errorf("username parameter required"), http.StatusBadRequest)
+		return
+	}
+
+	systemSave, err := savedata.GetSystem(uuid)
+	if err != nil {
+		httpError(w, r, fmt.Errorf("failed to get system save data: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	slot, err := db.GetLatestSessionSaveDataSlot(uuid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		httpError(w, r, fmt.Errorf("failed to get latest session slot: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	sessionSave, err := savedata.GetSession(uuid, slot)
+	if err != nil {
+		httpError(w, r, fmt.Errorf("failed to get session save data: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	data := TrainingData{System: systemSave, Session: sessionSave}
+	writeJSON(w, r, data)
+}
+
+func handleTrainingSessions(w http.ResponseWriter, r *http.Request) {
+	var uuid []byte
+	var err error
+
+	if username := r.URL.Query().Get("username"); username != "" {
+		uuid, err = db.FetchUUIDFromUsername(username)
+		if err != nil {
+			httpError(w, r, fmt.Errorf("failed to resolve username: %s", err), http.StatusBadRequest)
+			return
+		}
+	} else if r.Header.Get("Authorization") != "" {
+		uuid, err = uuidFromRequest(r)
+		if err != nil {
+			httpError(w, r, err, http.StatusUnauthorized)
+			return
+		}
+	} else {
+		httpError(w, r, fmt.Errorf("username parameter required"), http.StatusBadRequest)
+		return
+	}
+
+	slots, err := db.ListSessionSaveDataSlots(uuid)
+	if err != nil {
+		httpError(w, r, fmt.Errorf("failed to list session slots: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, r, slots)
+}
+
+func handleTrainingAction(w http.ResponseWriter, r *http.Request) {
+	var uuid []byte
+	var err error
+
+	if username := r.URL.Query().Get("username"); username != "" {
+		uuid, err = db.FetchUUIDFromUsername(username)
+		if err != nil {
+			httpError(w, r, fmt.Errorf("failed to resolve username: %s", err), http.StatusBadRequest)
+			return
+		}
+	} else if r.Header.Get("Authorization") != "" {
+		uuid, err = uuidFromRequest(r)
+		if err != nil {
+			httpError(w, r, err, http.StatusUnauthorized)
+			return
+		}
+	} else {
+		httpError(w, r, fmt.Errorf("username parameter required"), http.StatusBadRequest)
+		return
+	}
+
+	var action defs.TrainingAction
+	err = json.NewDecoder(r.Body).Decode(&action)
+	if err != nil {
+		httpError(w, r, fmt.Errorf("failed to decode action: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	key := string(uuid)
+	actionMu.Lock()
+	actionQueue[key] = append(actionQueue[key], action)
+	actionMu.Unlock()
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func handleTrainingActionFetch(w http.ResponseWriter, r *http.Request) {
+	var uuid []byte
+	var err error
+
+	if username := r.URL.Query().Get("username"); username != "" {
+		uuid, err = db.FetchUUIDFromUsername(username)
+		if err != nil {
+			httpError(w, r, fmt.Errorf("failed to resolve username: %s", err), http.StatusBadRequest)
+			return
+		}
+	} else if r.Header.Get("Authorization") != "" {
+		uuid, err = uuidFromRequest(r)
+		if err != nil {
+			httpError(w, r, err, http.StatusUnauthorized)
+			return
+		}
+	} else {
+		httpError(w, r, fmt.Errorf("username parameter required"), http.StatusBadRequest)
+		return
+	}
+
+	key := string(uuid)
+	actionMu.Lock()
+	actions := actionQueue[key]
+	delete(actionQueue, key)
+	actionMu.Unlock()
+
+	writeJSON(w, r, actions)
 }
 
 // daily
